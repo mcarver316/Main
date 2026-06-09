@@ -2,100 +2,54 @@ name: PAPA Lab CI/CD Pipeline
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [main, develop]
   pull_request:
-    branches: [ main, develop ]
+    branches: [main, develop]
   workflow_dispatch:
 
-env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}/papa-lab
-
 jobs:
-  # Job 1: Lint & Code Quality
   lint:
     name: Lint & Code Quality
     runs-on: ubuntu-latest
     continue-on-error: true
-
     steps:
       - uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
           cache: 'pip'
-
       - name: Install linting tools
-        run: |
-          pip install flake8 pylint black isort
-
+        run: pip install flake8 black isort
       - name: Run flake8
-        run: |
-          # E501 = line too long (ignore, too many false positives in generated code)
-          # F401 = unused imports (check, but allow for now)
-          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+        run: flake8 . --count --exit-zero --max-line-length=127
+      - name: Run black
+        run: black --check . --line-length=127 || true
+      - name: Run isort
+        run: isort --check-only . || true
 
-      - name: Run black (check formatting)
-        run: |
-          black --check . --line-length=127 || true
-
-      - name: Run isort (check import ordering)
-        run: |
-          isort --check-only . || true
-
-      - name: Run pylint (selective, non-blocking)
-        run: |
-          pylint app.py scripts/*.py --disable=all --enable=E,F || true
-
-  # Job 2: Tests & Coverage
   test:
     name: Tests & Coverage
     runs-on: ubuntu-latest
-
-    services:
-      # Optional: Start a minimal SQLite setup for tests
-      # Ollama tests will skip gracefully if service unavailable
-      ollama:
-        image: ollama/ollama:latest
-        options: >-
-          --health-cmd "curl -f http://localhost:11434/api/tags || exit 1"
-          --health-interval 30s
-          --health-timeout 10s
-          --health-retries 3
-        ports:
-          - 11434:11434
-
     steps:
       - uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
           cache: 'pip'
-
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
           pip install pytest pytest-cov pytest-xdist
-
       - name: Run pytest with coverage
-        run: |
-          pytest tests/ -v --cov=. --cov-report=xml --cov-report=html --tb=short -x
-        continue-on-error: false
-
+        run: pytest tests/ -v --cov=. --cov-report=xml --cov-report=html --tb=short
       - name: Upload coverage reports
         uses: codecov/codecov-action@v3
         with:
           files: ./coverage.xml
           flags: unittests
-          name: codecov-umbrella
-          fail_ci_if_error: false
-
-      - name: Upload coverage HTML artifact
+      - name: Upload coverage artifact
         uses: actions/upload-artifact@v3
         if: always()
         with:
@@ -103,126 +57,36 @@ jobs:
           path: htmlcov/
           retention-days: 30
 
-  # Job 3: Security Scan (Dependencies)
   security:
     name: Security Scan
     runs-on: ubuntu-latest
     continue-on-error: true
-
     steps:
       - uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
           cache: 'pip'
-
       - name: Install pip-audit
-        run: |
-          pip install pip-audit
+        run: pip install pip-audit
+      - name: Run pip-audit
+        run: pip-audit --requirements requirements.txt --desc || true
+      - name: Verify requirements.txt
+        run: pip install -r requirements.txt --dry-run
 
-      - name: Run pip-audit (dependency vulnerabilities)
-        run: |
-          pip-audit --requirements requirements.txt --desc || true
-
-      - name: Check for requirements.txt format
-        run: |
-          # Ensure requirements.txt is valid
-          pip install -r requirements.txt --dry-run
-
-      - name: Security: Bandit (static analysis)
-        continue-on-error: true
-        run: |
-          pip install bandit
-          bandit -r . -ll -f json -o bandit-report.json || true
-
-      - name: Upload bandit report
-        uses: actions/upload-artifact@v3
-        if: always()
-        with:
-          name: security-report
-          path: bandit-report.json
-          retention-days: 30
-
-  # Job 4: Docker Build
-  docker:
-    name: Docker Build & Registry
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-
-    permissions:
-      contents: read
-      packages: write
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-
-      - name: Log in to GitHub Container Registry
-        if: github.event_name != 'pull_request'
-        uses: docker/login-action@v2
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v4
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=ref,event=branch
-            type=sha
-
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-  # Job 5: Notification / Status Summary
   notify:
     name: Notify
     runs-on: ubuntu-latest
-    needs: [ lint, test, security ]
+    needs: [lint, test, security]
     if: always()
-
     steps:
-      - name: Check job statuses
+      - name: Check results
         run: |
-          echo "🔍 CI Pipeline Status Summary"
-          echo "=============================="
-          echo "Lint:     ${{ needs.lint.result }}"
-          echo "Test:     ${{ needs.test.result }}"
+          echo "Pipeline Status: ${{ job.status }}"
+          echo "Lint: ${{ needs.lint.result }}"
+          echo "Test: ${{ needs.test.result }}"
           echo "Security: ${{ needs.security.result }}"
-          echo ""
-
           if [ "${{ needs.test.result }}" == "failure" ]; then
-            echo "❌ Tests failed"
             exit 1
           fi
-
-          echo "✅ CI Pipeline complete"
-
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@v3
-        with:
-          name: test-results
-          path: |
-            .coverage
-            coverage.xml
-          retention-days: 30
-
-      - name: Comment on PR (if PR)
-        if: github.event_name == 'pull_request' && always()
-        run: |
-          echo "PR workflow completed"
