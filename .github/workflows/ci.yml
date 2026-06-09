@@ -132,10 +132,10 @@ jobs:
           pip install -r requirements.txt --dry-run
 
       - name: Security: Bandit (static analysis)
+        continue-on-error: true
         run: |
           pip install bandit
           bandit -r . -ll -f json -o bandit-report.json || true
-        continue-on-error: true
 
       - name: Upload bandit report
         uses: actions/upload-artifact@v3
