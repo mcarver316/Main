@@ -1,0 +1,83 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# pytest / coverage
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+.tox/
+
+# Databases & runtime state
+*.db
+*.sqlite
+*.sqlite3
+data/
+tmc_customer_service.db
+
+# Secrets & runtime config
+.security_level
+.selected_model
+.ollama_lab.pid
+*.pid
+*.key
+*.pem
+*.p12
+.env
+.env.*
+
+# Backups
+*.bak
+*.bak.*
+requirements*.bak*
+*.bak.*
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V8
+.Trashes
+
+# Logs
+*.log
+ollama.log
+logs/
+
+# ML model caches (large binary blobs)
+data/huggingface_cache/
+data/sentence_transformers_cache/
+data/chroma/
+*.bin
+*.gguf
+*.ggml
+
+# Report media / screenshots
+report_media/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo

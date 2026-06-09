@@ -14,36 +14,60 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
       - name: Install linting tools
-        run: pip install flake8 black isort
-      - name: Run flake8
-        run: flake8 . --count --exit-zero --max-line-length=127 || true
-      - name: Run black
+        run: pip install flake8 black
+
+      - name: flake8 (errors only)
+        run: flake8 app.py scripts/ --count --select=E9,F63,F7,F82 --show-source || true
+
+      - name: flake8 (full report, non-blocking)
+        run: flake8 . --count --exit-zero --max-line-length=127 --statistics || true
+
+      - name: black format check (non-blocking)
         run: black --check . --line-length=127 || true
 
   test:
     name: Tests & Coverage
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install dependencies
+
+      - name: Install CI dependencies (fast — no torch/chromadb)
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt 2>&1 | head -20
-          pip install pytest pytest-cov 2>&1 | head -10
-      - name: Check test file exists
-        run: ls -la tests/test_papa_lab.py
-      - name: Run tests
-        run: python -m pytest tests/test_papa_lab.py -v --tb=line 2>&1 | head -50 || true
+          pip install -r requirements-ci.txt
+          pip install pytest pytest-cov pyyaml
+
+      - name: Verify test files present
+        run: |
+          ls -la tests/
+          echo "test_ci.py:      $(wc -l < tests/test_ci.py) lines"
+          echo "test_papa_lab.py: $(wc -l < tests/test_papa_lab.py) lines"
+
+      - name: Run CI test suite
+        run: |
+          python -m pytest tests/test_ci.py -v --tb=short \
+            --cov=. --cov-report=term-missing --cov-report=xml \
+            -p no:warnings
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml
+          retention-days: 7
 
   security:
     name: Security Scan
@@ -51,14 +75,32 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Check requirements
-        run: cat requirements.txt | head -10
-      - name: Verify requirements format
-        run: python -m pip install --dry-run -r requirements.txt 2>&1 | head -20 || true
+
+      - name: Show pinned dependency summary
+        run: |
+          echo "=== requirements.txt package count ==="
+          grep -c "==" requirements.txt || true
+          echo ""
+          echo "=== Core packages ==="
+          grep -E "^(Flask|chromadb|sentence-transformers|Werkzeug)==" requirements.txt || true
+
+      - name: Install pip-audit
+        run: pip install pip-audit || true
+
+      - name: Audit CI dependencies
+        run: pip-audit -r requirements-ci.txt --format=json 2>&1 | head -40 || true
+
+      - name: Check for hardcoded secrets patterns
+        run: |
+          echo "=== Scanning for accidental secret patterns ==="
+          grep -rn "password\s*=\s*['\"][^'\"]\{8,\}" app.py scripts/ || echo "No hardcoded passwords found"
+          grep -rn "api_key\s*=\s*['\"][^'\"]\{10,\}" app.py scripts/ || echo "No hardcoded API keys found"
+          echo "Note: keys.md contains intentional FAKE credentials for SC-04 lab scenario"
 
   results:
     name: Results Summary
@@ -68,8 +110,16 @@ jobs:
     steps:
       - name: Pipeline Status
         run: |
-          echo "=== PAPA Lab CI/CD Pipeline ==="
-          echo "Lint:     ${{ needs.lint.result }}"
-          echo "Test:     ${{ needs.test.result }}"
-          echo "Security: ${{ needs.security.result }}"
-          echo "================================"
+          echo "==============================="
+          echo "  PAPA Lab CI/CD Pipeline"
+          echo "==============================="
+          echo "  Lint:     ${{ needs.lint.result }}"
+          echo "  Test:     ${{ needs.test.result }}"
+          echo "  Security: ${{ needs.security.result }}"
+          echo "==============================="
+          if [ "${{ needs.test.result }}" = "success" ]; then
+            echo "  STATUS: PASS"
+          else
+            echo "  STATUS: FAIL — check test job"
+            exit 1
+          fi

@@ -1,0 +1,52 @@
+# Hybrid configuration adapted for Apple Silicon / Docker Desktop for Mac.
+# Ollama runs NATIVELY on macOS (uses the Apple Metal GPU); only the chatbot
+# is containerized and reaches the host via host.docker.internal.
+#
+# Differences vs the shipped docker-compose.hybrid.yml (which targets Linux):
+#   - no `network_mode: host` (not equivalent on Docker Desktop for Mac)
+#   - publish 5001:5000 on the host (macOS Control Center already holds :5000)
+#   - OLLAMA_BASE_URL points at host.docker.internal instead of localhost
+
+services:
+  chatbot:
+    build: .
+    container_name: tmc_chatbot_hybrid
+    restart: unless-stopped
+    ports:
+      - "5001:5000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - chatbot_data:/app/data
+      - vector_db_data:/app/data/vector_db
+      - ./templates:/app/templates
+      - ./static:/app/static
+      - ./app.py:/app/app.py
+      - ./scripts:/app/scripts
+      - ./knowledge_base:/app/knowledge_base
+      - ./.selected_model:/app/.selected_model
+    environment:
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - FLASK_ENV=production
+      - FLASK_DEBUG=0
+      - DATABASE_PATH=/app/data/tmc_customer_service.db
+      - TRANSFORMERS_CACHE=/app/data/transformers_cache
+      - HF_HOME=/app/data/huggingface_cache
+      - ANONYMIZED_TELEMETRY=False
+      - CHROMA_TELEMETRY_ENABLED=false
+      - CHROMADB_TELEMETRY_DISABLED=true
+      - POSTHOG_DISABLED=true
+      # AI Security Teaching Level (1-5)
+      - AI_SECURITY_LEVEL=${AI_SECURITY_LEVEL:-1}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  chatbot_data:
+    driver: local
+  vector_db_data:
+    driver: local
