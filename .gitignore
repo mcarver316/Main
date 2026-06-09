@@ -32,6 +32,7 @@ data/
 tmc_customer_service.db
 
 # Secrets & runtime config
+.secret_key
 .security_level
 .selected_model
 .ollama_lab.pid
