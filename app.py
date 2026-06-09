@@ -18,26 +18,77 @@ from scripts.rag_helper import RAGHelper
 import subprocess as _subprocess
 import tempfile as _tempfile
 
-# Set environment variable to increase urllib3 timeouts
-os.environ['REQUESTS_CA_BUNDLE'] = ''  # Disable SSL verification for internal communications
-os.environ['CURL_CA_BUNDLE'] = ''
-
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# Enable CORS for all routes
-CORS(app, 
-     resources={r"/*": {"origins": "*"}},
+# ---------------------------------------------------------------------------
+# C-1 FIX: Stable SECRET_KEY — generate once and persist so sessions survive
+#           restarts.  Env var takes precedence (Docker / production).
+# ---------------------------------------------------------------------------
+def _get_or_create_secret_key() -> str:
+    """Return a stable SECRET_KEY.
+
+    Priority:
+      1. SECRET_KEY environment variable (recommended for production / Docker).
+      2. Persisted .secret_key file next to app.py (auto-created on first run).
+      3. In-memory fallback (sessions reset on restart — warns loudly).
+    """
+    env_key = os.environ.get('SECRET_KEY')
+    if env_key and len(env_key) >= 32:
+        return env_key
+
+    import stat
+    key_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.secret_key')
+    if os.path.exists(key_file):
+        try:
+            with open(key_file, 'r') as fh:
+                key = fh.read().strip()
+            if len(key) >= 32:
+                return key
+        except Exception as exc:
+            logging.getLogger(__name__).warning(f"Could not read .secret_key: {exc}")
+
+    key = secrets.token_urlsafe(32)
+    try:
+        with open(key_file, 'w') as fh:
+            fh.write(key)
+        os.chmod(key_file, stat.S_IRUSR | stat.S_IWUSR)  # 600 — owner read/write only
+        logging.getLogger(__name__).info("SECRET_KEY generated and persisted to .secret_key")
+    except Exception as exc:
+        logging.getLogger(__name__).warning(
+            f"C-1: Could not persist SECRET_KEY ({exc}). Sessions will reset on restart."
+        )
+    return key
+
+# ---------------------------------------------------------------------------
+# H-1 FIX: Restrict CORS to localhost origins only.
+#           Override via CORS_ALLOWED_ORIGINS env var (comma-separated) for
+#           non-default deployments.
+# ---------------------------------------------------------------------------
+_DEFAULT_CORS_ORIGINS = [
+    "http://localhost:5000",
+    "http://localhost:5001",
+    "http://127.0.0.1:5000",
+    "http://127.0.0.1:5001",
+]
+CORS_ALLOWED_ORIGINS: list[str] = [
+    o.strip()
+    for o in os.environ.get("CORS_ALLOWED_ORIGINS", ",".join(_DEFAULT_CORS_ORIGINS)).split(",")
+    if o.strip()
+]
+
+CORS(app,
+     resources={r"/*": {"origins": CORS_ALLOWED_ORIGINS}},
      supports_credentials=False,
      allow_headers=["Content-Type", "Authorization"],
      methods=["GET", "POST", "OPTIONS"])
 
 # Secure session configuration
 app.config.update(
-    SECRET_KEY=os.environ.get('SECRET_KEY', secrets.token_urlsafe(32)),
+    SECRET_KEY=_get_or_create_secret_key(),
     SESSION_COOKIE_SECURE=os.environ.get('FLASK_ENV') == 'production',
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE='Lax',
@@ -227,11 +278,15 @@ def after_request(response):
     
     response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' http://localhost:1234 https://cdn.jsdelivr.net; worker-src 'self' blob:"
     
-    # Add explicit CORS headers for Firefox compatibility
-    response.headers['Access-Control-Allow-Origin'] = '*'
-    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
-    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
-    response.headers['Access-Control-Max-Age'] = '86400'
+    # H-1 FIX: Echo the request Origin only if it is in the allowlist.
+    # Flask-CORS already handles this for most cases; this block covers the
+    # after_request path that was previously setting a blanket wildcard.
+    req_origin = request.headers.get('Origin', '')
+    if req_origin in CORS_ALLOWED_ORIGINS:
+        response.headers['Access-Control-Allow-Origin'] = req_origin
+        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        response.headers['Access-Control-Max-Age'] = '86400'
     
     # Refresh session timeout on activity
     if session.get('session_id'):
@@ -1573,14 +1628,13 @@ Description: {ticket['description']}
                     raise Exception(f"Curl failed: {result.stderr}")
                     
             finally:
-                # SECURITY FIX: Secure cleanup of temp file
+                # H-3 FIX: Secure cleanup — overwrite with actual file size then unlink.
                 if temp_file and os.path.exists(temp_file):
                     try:
-                        # Overwrite file content before deletion
+                        file_size = max(os.path.getsize(temp_file), 1)
                         with open(temp_file, 'w') as f:
-                            f.write('0' * 1024)  # Overwrite with zeros
+                            f.write('0' * file_size)  # Overwrite entire content
                         os.unlink(temp_file)
-                        logger.info("Temp file securely cleaned up")
                     except Exception as e:
                         logger.error(f"Failed to clean up temp file: {e}")
             
@@ -2937,22 +2991,6 @@ def logout():
         # Still clear the session even if DB update fails
         session.clear()
         return jsonify({'success': True, 'message': 'Logged out successfully'})
-
-@app.route('/api/user')
-def get_user():
-    """Get current user info"""
-    user_id = session.get('user_id')
-    if not user_id:
-        return jsonify({'authenticated': False})
-    
-    return jsonify({
-        'authenticated': True,
-        'user': {
-            'id': user_id,
-            'email': session.get('user_email'),
-            'name': session.get('user_name')
-        }
-    })
 
 @app.route('/api/conversations')
 def get_conversations():

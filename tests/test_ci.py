@@ -229,14 +229,84 @@ class TestPAPALabMarkers:
         source = path.read_text(encoding="utf-8")
         assert "AI_SECURITY_LEVEL" in source, "AI_SECURITY_LEVEL constant missing from app.py"
 
-    def test_secret_key_issue_present(self):
-        """C-1: SECRET_KEY should use secrets.token_urlsafe (known issue, Phase 2 fix)."""
+    def test_secret_key_stable_implementation(self):
+        """C-1 FIX: SECRET_KEY must use _get_or_create_secret_key() — not a bare token_urlsafe default."""
         path = REPO_ROOT / "app.py"
         if not path.exists():
             pytest.skip("app.py not found")
         source = path.read_text(encoding="utf-8")
-        # Verify C-1 issue is still present (not accidentally pre-fixed)
-        assert "SECRET_KEY" in source, "SECRET_KEY configuration missing from app.py"
+        assert "_get_or_create_secret_key" in source, (
+            "C-1 fix missing: _get_or_create_secret_key() not found in app.py"
+        )
+        assert "SECRET_KEY=_get_or_create_secret_key()" in source, (
+            "C-1 fix missing: SECRET_KEY must call _get_or_create_secret_key()"
+        )
+
+    def test_ssl_verification_not_disabled(self):
+        """C-3 FIX: SSL verification must not be globally disabled."""
+        path = REPO_ROOT / "app.py"
+        if not path.exists():
+            pytest.skip("app.py not found")
+        source = path.read_text(encoding="utf-8")
+        assert "REQUESTS_CA_BUNDLE" not in source, (
+            "C-3: REQUESTS_CA_BUNDLE='' found — SSL verification is globally disabled"
+        )
+        assert "CURL_CA_BUNDLE" not in source, (
+            "C-3: CURL_CA_BUNDLE='' found — SSL verification is globally disabled"
+        )
+
+    def test_cors_not_wildcard(self):
+        """H-1 FIX: CORS must not use wildcard '*' origins."""
+        path = REPO_ROOT / "app.py"
+        if not path.exists():
+            pytest.skip("app.py not found")
+        source = path.read_text(encoding="utf-8")
+        assert "CORS_ALLOWED_ORIGINS" in source, (
+            "H-1 fix missing: CORS_ALLOWED_ORIGINS not defined"
+        )
+        # The CORS() call must reference CORS_ALLOWED_ORIGINS, not a literal "*"
+        assert '"origins": "*"' not in source and "'origins': '*'" not in source, (
+            "H-1: CORS still using wildcard origins"
+        )
+
+    def test_no_duplicate_api_user_route(self):
+        """H-2 FIX: /api/user must appear exactly once."""
+        path = REPO_ROOT / "app.py"
+        if not path.exists():
+            pytest.skip("app.py not found")
+        source = path.read_text(encoding="utf-8")
+        count = source.count("@app.route('/api/user')")
+        assert count == 1, (
+            f"H-2: /api/user route registered {count} times (must be exactly 1)"
+        )
+
+    def test_temp_file_overwrite_uses_actual_size(self):
+        """H-3 FIX: Temp file cleanup must use actual file size, not hardcoded 1024."""
+        path = REPO_ROOT / "app.py"
+        if not path.exists():
+            pytest.skip("app.py not found")
+        source = path.read_text(encoding="utf-8")
+        assert "getsize" in source, (
+            "H-3 fix missing: os.path.getsize not used for temp file overwrite"
+        )
+        assert "'0' * 1024" not in source, (
+            "H-3: Hardcoded 1024-byte overwrite still present — use actual file size"
+        )
+
+    def test_kb_reindex_requires_admin_role(self):
+        """H-4: /api/knowledge-base/reindex must be protected by @require_role('admin')."""
+        path = REPO_ROOT / "app.py"
+        if not path.exists():
+            pytest.skip("app.py not found")
+        source = path.read_text(encoding="utf-8")
+        # Find the reindex route and verify require_role is nearby
+        idx = source.find("'/api/knowledge-base/reindex'")
+        assert idx != -1, "kb_reindex route not found in app.py"
+        # Check the 300 chars around the route for require_role
+        context = source[max(0, idx - 50):idx + 300]
+        assert "require_role" in context, (
+            "H-4: /api/knowledge-base/reindex missing @require_role decorator"
+        )
 
 
 # ===========================================================================
