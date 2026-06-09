@@ -236,14 +236,5 @@ jobs:
 
       - name: Comment on PR (if PR)
         if: github.event_name == 'pull_request' && always()
-        uses: actions/github-script@v6
-        with:
-          script: |
-            const testResult = '${{ needs.test.result }}'
-            const status = testResult === 'success' ? '✅' : '❌'
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: `${status} **CI Pipeline Status**\n\n- Lint: ${{ needs.lint.result }}\n- Tests: ${{ needs.test.result }}\n- Security: ${{ needs.security.result }}\n\nFull results: [View in Actions](${context.payload.pull_request.html_url}/checks)`
-            })
+        run: |
+          echo "PR workflow completed"
