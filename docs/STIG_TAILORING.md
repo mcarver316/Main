@@ -76,5 +76,5 @@ this document and acknowledges the residual risk for PAPA Lab v4.
 
 **Authorizing Official:** Michael Carver
 **Organization:** Agile Armory (Mike Carver Services LLC)
-**Date:** _______________
-**Signature:** _______________
+**Date:** __2026-06-09_____________
+**Signature:** __Mike Carver_____________
