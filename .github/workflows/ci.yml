@@ -177,6 +177,43 @@ jobs:
             safety-report.json
 
   # ========================================================================
+  # Job 6: Secret Detection (PM-12)
+  # Uses detect-secrets with an audited baseline so intentional SC-04
+  # fake credentials (keys.md, rag_exfil demo content) never block CI.
+  # ========================================================================
+  secret-scan:
+    name: Secret Detection
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install detect-secrets
+        run: pip install detect-secrets
+
+      - name: Scan for secrets
+        run: |
+          detect-secrets scan \
+            --baseline .secrets.baseline \
+            --exclude-files 'requirements.*\.txt$' \
+            --exclude-files '.*\.md$' \
+            --exclude-files 'tests/.*' \
+            --exclude-files '\.git/.*'
+
+      - name: Audit baseline (fail on unaudited)
+        run: detect-secrets audit .secrets.baseline --report --fail-on-unaudited
+
+      - name: Upload baseline as artifact
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: secrets-scan-report
+          path: .secrets.baseline
+
+  # ========================================================================
   # Job 4: Docker Build
   # ========================================================================
   docker-build:
@@ -196,7 +233,7 @@ jobs:
     name: Results Summary
     runs-on: ubuntu-latest
     if: always()
-    needs: [lint, test, security-scan-deps]
+    needs: [lint, test, security-scan-deps, secret-scan]
     steps:
       - name: Pipeline Status
         run: |
