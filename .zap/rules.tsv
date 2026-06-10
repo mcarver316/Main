@@ -1,0 +1,7 @@
+10010	IGNORE	(SC-04: unauthenticated KB search is intentional per SSPP §4)
+10011	IGNORE	(SC-01/SC-02: prompt injection surface is intentional per SSPP §4)
+10016	IGNORE	(SC-08: IDOR on /api/tickets is intentional per SSPP §4)
+10020	IGNORE	(SC-03/SC-05: indirect injection surface is intentional per SSPP §4)
+10096	IGNORE	(SC-06: insecure plugin design is intentional per SSPP §4)
+40012	IGNORE	(SC-01: XSS surface at Level 1-2 is intentional per SSPP §4)
+40014	IGNORE	(SC-08: IDOR reflected in responses is intentional per SSPP §4)
