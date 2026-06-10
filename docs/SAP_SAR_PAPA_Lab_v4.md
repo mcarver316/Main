@@ -42,6 +42,7 @@ controls.
 | ci.yml GitHub Actions run #22 | Phase 3 gate evidence — blocking security-scan-deps, secret-scan, SBOM all green; commit cb278c9 |
 | requirements-pinned.txt | Component inventory baseline |
 | live_test_results.txt (2026-06-10) | CC live test — auth enforcement, CORS, SC-08 IDOR |
+| SC-08 live re-test (2026-06-10) | Alice (user B) queried TMC-100001 (owned by user A) via /api/chat — chatbot returned ticket content with no ownership check; IDOR teaching feature confirmed intact at Level 1 |
 
 ---
 
