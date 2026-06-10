@@ -168,7 +168,7 @@ jobs:
 
       - name: Archive security reports
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: security-scan-reports
           path: |
@@ -248,7 +248,7 @@ jobs:
 
       - name: Upload ZAP report
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: zap-dast-report
           path: |
@@ -310,7 +310,7 @@ jobs:
 
       - name: Upload SBOM and provenance
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: sbom-and-provenance
           path: |
@@ -341,6 +341,7 @@ jobs:
             --baseline .secrets.baseline \
             --exclude-files 'requirements.*\.txt$' \
             --exclude-files '.*\.md$' \
+            --exclude-files '.*\.baseline$' \
             --exclude-files 'tests/.*' \
             --exclude-files '\.git/.*'
 
@@ -349,7 +350,7 @@ jobs:
 
       - name: Upload baseline as artifact
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: secrets-scan-report
           path: .secrets.baseline
@@ -397,7 +398,7 @@ jobs:
 
       - name: Upload Trivy results
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: trivy-scan-report
           path: trivy-results.json
