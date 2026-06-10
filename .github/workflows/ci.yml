@@ -177,6 +177,68 @@ jobs:
             safety-report.json
 
   # ========================================================================
+  # Job 7: SBOM Generation + Build Provenance (PM-09)
+  # ========================================================================
+  sbom:
+    name: SBOM Generation
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install cyclonedx-bom
+        run: pip install cyclonedx-bom
+
+      - name: Generate CycloneDX SBOM
+        run: |
+          cyclonedx-py requirements requirements-pinned.txt \
+            --output-format json \
+            --output-file sbom-cyclonedx.json
+
+      - name: Validate and summarise SBOM
+        run: |
+          python3 -c "
+          import json
+          sbom = json.load(open('sbom-cyclonedx.json'))
+          n = len(sbom.get('components', []))
+          print(f'SBOM: {n} components, format={sbom.get(\"bomFormat\")}, spec={sbom.get(\"specVersion\")}')
+          "
+
+      - name: Capture build provenance
+        run: |
+          python3 -c "
+          import json, os, subprocess
+          from datetime import datetime, timezone
+          sha = subprocess.check_output(['git','rev-parse','HEAD']).decode().strip()
+          provenance = {
+            'commit': sha,
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'workflow_run': os.environ.get('GITHUB_RUN_ID','local'),
+            'runner_os': os.environ.get('RUNNER_OS','macOS'),
+            'python_version': '3.11',
+            'requirements_sha256': subprocess.check_output(
+              ['sha256sum','requirements-pinned.txt']).decode().split()[0]
+          }
+          json.dump(provenance, open('build-provenance.json','w'), indent=2)
+          print('Provenance:', json.dumps(provenance, indent=2))
+          "
+
+      - name: Upload SBOM and provenance
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: sbom-and-provenance
+          path: |
+            sbom-cyclonedx.json
+            build-provenance.json
+
+  # ========================================================================
   # Job 6: Secret Detection (PM-12)
   # Uses detect-secrets with an audited baseline so intentional SC-04
   # fake credentials (keys.md, rag_exfil demo content) never block CI.
@@ -225,6 +287,41 @@ jobs:
 
       - name: Build Docker image
         run: docker build -t papa-lab:latest .
+
+      - name: Scan image with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'papa-lab:latest'
+          format: 'json'
+          output: 'trivy-results.json'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'
+
+      - name: Enforce no-CRITICAL container policy
+        run: |
+          python3 -c "
+          import json, sys
+          try:
+              data = json.load(open('trivy-results.json'))
+              critical = [v for r in data.get('Results', [])
+                            for v in r.get('Vulnerabilities', [])
+                            if v.get('Severity') == 'CRITICAL']
+              if critical:
+                  print(f'BLOCKING: {len(critical)} CRITICAL container CVE(s).')
+                  for v in critical[:5]:
+                      print(f'  {v[\"VulnerabilityID\"]}: {v.get(\"PkgName\",\"\")} {v.get(\"InstalledVersion\",\"\")}')
+                  sys.exit(1)
+              print(f'Trivy: no CRITICAL CVEs in container image.')
+          except FileNotFoundError:
+              print('Trivy: no results file found — scan may not have run.')
+          "
+
+      - name: Upload Trivy results
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: trivy-scan-report
+          path: trivy-results.json
 
   # ========================================================================
   # Job 5: Notify / Results Summary
