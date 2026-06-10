@@ -38,7 +38,8 @@ controls.
 | Phase 2 Completion Certificate | Six Critical/High bug remediations, 51 tests passing |
 | Phase 2 Final Validation Report | Live smoke test — all 8 PAPA scenarios intact |
 | SDLC_NOTES.md | Intentional vs. genuine bug classification |
-| ci.yml GitHub Actions runs #9–12 | Automated gate evidence, commit 95571777 |
+| ci.yml GitHub Actions runs #9–12 | Automated gate evidence, commit 95571777 (Phase 1/2) |
+| ci.yml GitHub Actions run #22 | Phase 3 gate evidence — blocking security-scan-deps, secret-scan, SBOM all green; commit cb278c9 |
 | requirements-pinned.txt | Component inventory baseline |
 | live_test_results.txt (2026-06-10) | CC live test — auth enforcement, CORS, SC-08 IDOR |
 
