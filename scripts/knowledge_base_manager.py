@@ -86,7 +86,7 @@ class KnowledgeBaseManager:
                 content = f.read()
             
             # Calculate file hash for change detection
-            file_hash = hashlib.md5(content.encode()).hexdigest()
+            file_hash = hashlib.md5(content.encode(), usedforsecurity=False).hexdigest()
             
             # Extract title (first # heading)
             title = "Unknown Document"
